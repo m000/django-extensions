@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import importlib
 import inspect
 import os
 import sys
@@ -277,21 +278,24 @@ class Command(BaseCommand):
             from IPython import release
         except ImportError:
             return traceback.format_exc()
-        try:
-            from notebook.notebookapp import NotebookApp
-        except ImportError:
-            if release.version_info[0] >= 7:
-                return traceback.format_exc()
+
+        nbapp_locations = (
+            'notebook.app.JupyterNotebookApp',  # notebook>=7
+            'notebook.notebookapp.NotebookApp',  # notebook<7
+            'IPython.html.notebookapp.NotebookApp',  # legacy, python3
+            'IPython.frontend.html.notebook.notebookapp',  # legacy, python2
+        )
+        import_errors = []
+        for nbapp in nbapp_locations:
             try:
-                from IPython.html.notebookapp import NotebookApp
-            except ImportError:
-                if release.version_info[0] >= 3:
-                    return traceback.format_exc()
-                try:
-                    from IPython.frontend.html.notebook import notebookapp
-                    NotebookApp = notebookapp.NotebookApp
-                except ImportError:
-                    return traceback.format_exc()
+                module_name, _, attr = nbapp.rpartition('.')
+                module = importlib.import_module(module_name)
+                NotebookApp = getattr(module, attr)
+                break
+            except (ImportError, AttributeError) as e:
+                import_errors.append(e)
+        else:
+            raise ExceptionGroup(f"Failed to import NotebookApp from any of the specified locations: {nbapp_locations}.", import_errors)
 
         use_kernel_specs = release.version_info[0] >= 3
 
